@@ -1,5 +1,7 @@
 import random
 import os
+from threading import Thread
+from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from huggingface_hub import InferenceClient
@@ -8,67 +10,41 @@ from huggingface_hub import InferenceClient
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 HF_API_KEY = os.environ.get("HF_API_KEY")
 
+# --- ФЕЙКОВЫЙ ВЕБ-СЕРВЕР ДЛЯ RENDER ---
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def health():
+    return "Bot is running"
+
 # --- НАСТРОЙКА МОЗГА (HUGGING FACE) ---
 client = InferenceClient(provider="hf-inference", api_key=HF_API_KEY)
-
-# Память для каждого пользователя, чтобы бот помнил контекст
 user_conversations = {}
 
 # --- ЛОКАЦИИ И РЫБА (оставляем как было) ---
-LOCATIONS = [
-    "Пискаревка", "Академический пруд", "Нева у моста", "Мусорка за домом",
-    "База под мостом", "Крыша у Артёма", "Фонтан в парке", "Заброшенный пирс",
-    "Старый пруд у школы", "Речка за гаражами", "Озеро в лесу", "Канал у завода"
-]
-FISHES = [
-    ("Окунь", "300 г"), ("Карась", "500 г"), ("Щука", "1.5 кг"),
-    ("Лещ", "800 г"), ("Плотва", "200 г"), ("Сом", "3 кг"),
-    ("Карп", "2.5 кг"), ("Судак", "1.2 кг"), ("Ерш", "150 г"),
-    ("Голавль", "600 г"), ("Язь", "900 г"), ("Линь", "700 г")
-]
+LOCATIONS = ["Пискаревка", "Академический пруд", "Нева у моста", "Мусорка за домом", "База под мостом", "Крыша у Артёма", "Фонтан в парке", "Заброшенный пирс"]
+FISHES = [("Окунь", "300 г"), ("Карась", "500 г"), ("Щука", "1.5 кг"), ("Лещ", "800 г"), ("Плотва", "200 г"), ("Сом", "3 кг"), ("Карп", "2.5 кг"), ("Судак", "1.2 кг")]
 
 # --- КНОПКИ ---
-def get_main_keyboard():
-    return ReplyKeyboardMarkup(
-        [[KeyboardButton("Рыбалка"), KeyboardButton("Болталка")],
-         [KeyboardButton("Куда пойти")]],
-        resize_keyboard=True
-    )
+def get_main_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton("Рыбалка"), KeyboardButton("Болталка")], [KeyboardButton("Куда пойти")]], resize_keyboard=True)
+def get_location_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton(loc)] for loc in LOCATIONS] + [[KeyboardButton("Назад")]], resize_keyboard=True)
+def get_fish_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton("Рыбалка")], [KeyboardButton("Назад")]], resize_keyboard=True)
 
-def get_location_keyboard():
-    buttons = [[KeyboardButton(loc)] for loc in LOCATIONS]
-    buttons.append([KeyboardButton("Назад")])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-
-def get_fish_keyboard():
-    return ReplyKeyboardMarkup(
-        [[KeyboardButton("Рыбалка")], [KeyboardButton("Назад")]],
-        resize_keyboard=True
-    )
-
-# --- ФУНКЦИЯ ОБЩЕНИЯ С ИИ ---
+# --- ФУНКЦИЯ ДЛЯ ИИ ---
 def ask_ai(user_id, text):
-    # Если у пользователя ещё нет истории — создаём
     if user_id not in user_conversations:
         user_conversations[user_id] = []
-
-    # Добавляем сообщение пользователя
     user_conversations[user_id].append({"role": "user", "content": text})
-
-    # Ограничиваем историю последними 10 сообщениями
     if len(user_conversations[user_id]) > 10:
         user_conversations[user_id] = user_conversations[user_id][-10:]
-
     try:
-        # Запрос к нейросети
         completion = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="openai/gpt-oss-120b",  # <-- исправленная модель
             messages=user_conversations[user_id],
             max_tokens=500,
             temperature=0.7,
         )
         response_text = completion.choices[0].message.content
-        # Добавляем ответ бота в историю
         user_conversations[user_id].append({"role": "assistant", "content": response_text})
         return response_text
     except Exception as e:
@@ -81,7 +57,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.message.chat_id
-
     if text == "Рыбалка":
         await update.message.reply_text("Куда пойдём?", reply_markup=get_location_keyboard())
     elif text == "Болталка":
@@ -94,14 +69,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "Назад":
         await start(update, context)
     else:
-        # --- ЗДЕСЬ ОТВЕЧАЕТ ИИ ---
         ai_response = ask_ai(user_id, text)
         await update.message.reply_text(ai_response, reply_markup=get_main_keyboard())
 
-# --- ЗАПУСК ---
+# --- ЗАПУСК ВСЕГО ---
+def run_bot():
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.run_polling()
+
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling()
-    
+    # Запускаем бота в отдельном потоке
+    Thread(target=run_bot).start()
+    # Запускаем Flask-сервер, чтобы Render видел порт
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host='0.0.0.0', port=port)
