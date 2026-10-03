@@ -2,109 +2,82 @@ import random
 import os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from huggingface_hub import InferenceClient
 
-# Токен берётся из переменной окружения на Render
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8720154823:AAGgoLl13YBEPVAKACb3o3rjsOhdr0t9Ve4")
+# --- ТОКЕНЫ ---
+BOT_TOKEN = os.environ.get("8720154823:AAGgoLl13YBEPVAKACb3o3rjsOhdr0t9Ve4")
+HF_API_KEY = os.environ.get("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")
 
-# --- ЛОКАЦИИ ДЛЯ РЫБАЛКИ ---
-LOCATIONS = [
-    "Пискаревка",
-    "Академический пруд",
-    "Нева у моста",
-    "Мусорка за домом",
-    "База под мостом",
-    "Крыша у Артёма"
-]
+# --- НАСТРОЙКА HUGGING FACE ---
+client = InferenceClient(
+    provider="hf-inference",
+    api_key=HF_API_KEY,
+)
 
-# --- РЫБА (название, вес) ---
-FISHES = [
-    ("Окунь", "300 г"),
-    ("Карась", "500 г"),
-    ("Щука", "1.5 кг"),
-    ("Лещ", "800 г"),
-    ("Плотва", "200 г"),
-    ("Сом", "3 кг"),
-    ("Карп", "2.5 кг"),
-    ("Судак", "1.2 кг"),
-]
+# --- ПАМЯТЬ ДЛЯ КАЖДОГО ПОЛЬЗОВАТЕЛЯ (чтобы бот помнил контекст) ---
+user_conversations = {}
 
-# --- БОЛТАЛКА (ответы на слова) ---
-TALK_RESPONSES = [
-    "Интересно, расскажи ещё.",
-    "А что было дальше?",
-    "Жёстко, брат.",
-    "Ну ты даёшь.",
-    "Слушай, а что потом?",
-    "Понял тебя.",
-    "Это сильно.",
-    "Давай подробнее.",
-    "Хм, а почему так?",
-    "Ого, вот это поворот.",
-]
+# --- ЛОКАЦИИ И РЫБА (оставляем как было) ---
+LOCATIONS = ["Пискаревка", "Академический пруд", "Нева у моста", "Мусорка за домом", "База под мостом", "Крыша у Артёма"]
+FISHES = [("Окунь", "300 г"), ("Карась", "500 г"), ("Щука", "1.5 кг"), ("Лещ", "800 г"), ("Плотва", "200 г"), ("Сом", "3 кг"), ("Карп", "2.5 кг"), ("Судак", "1.2 кг")]
 
 # --- КНОПКИ ---
-MAIN_KEYBOARD = [
-    [KeyboardButton("Рыбалка"), KeyboardButton("Болталка")],
-    [KeyboardButton("Куда пойти")]
-]
+MAIN_KEYBOARD = [[KeyboardButton("Рыбалка"), KeyboardButton("Болталка")], [KeyboardButton("Куда пойти")]]
+def get_main_keyboard(): return ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True)
+def get_location_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton(loc)] for loc in LOCATIONS] + [[KeyboardButton("Назад")]], resize_keyboard=True)
+def get_fish_keyboard(): return ReplyKeyboardMarkup([[KeyboardButton("Рыбалка")], [KeyboardButton("Назад")]], resize_keyboard=True)
 
-def get_main_keyboard():
-    return ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True)
+# --- ФУНКЦИЯ ДЛЯ ИИ ---
+def ask_ai(user_id, text):
+    # Если у пользователя ещё нет истории — создаём
+    if user_id not in user_conversations:
+        user_conversations[user_id] = []
 
-def get_location_keyboard():
-    keyboard = [[KeyboardButton(loc)] for loc in LOCATIONS]
-    keyboard.append([KeyboardButton("Назад")])
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    # Добавляем сообщение пользователя в историю
+    user_conversations[user_id].append({"role": "user", "content": text})
 
-def get_fish_keyboard():
-    return ReplyKeyboardMarkup(
-        [[KeyboardButton("Рыбалка")], [KeyboardButton("Назад")]],
-        resize_keyboard=True
-    )
+    # Ограничиваем историю последними 10 сообщениями, чтобы не перегружать
+    if len(user_conversations[user_id]) > 10:
+        user_conversations[user_id] = user_conversations[user_id][-10:]
 
-# --- СТАРТ ---
+    try:
+        # Запрос к Hugging Face
+        completion = client.chat.completions.create(
+            model="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",  # бесплатная модель
+            messages=user_conversations[user_id],
+            max_tokens=500,
+            temperature=0.7,
+        )
+        response_text = completion.choices[0].message.content
+        # Добавляем ответ бота в историю
+        user_conversations[user_id].append({"role": "assistant", "content": response_text})
+        return response_text
+    except Exception as e:
+        return f"Ошибка ИИ: {e}"
+
+# --- ЛОГИКА БОТА ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Йо, Чувак! Выбирай:",
-        reply_markup=get_main_keyboard()
-    )
+    await update.message.reply_text("Йо, Чувак! Выбирай:", reply_markup=get_main_keyboard())
 
-# --- ОБРАБОТКА СООБЩЕНИЙ ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    user_id = update.message.chat_id
 
     if text == "Рыбалка":
-        await update.message.reply_text(
-            "Куда пойдём?",
-            reply_markup=get_location_keyboard()
-        )
-
+        await update.message.reply_text("Куда пойдём?", reply_markup=get_location_keyboard())
     elif text == "Болталка":
-        await update.message.reply_text(
-            "О чём хочешь поговорить? Просто пиши.",
-            reply_markup=get_main_keyboard()
-        )
-
+        await update.message.reply_text("О чём хочешь поговорить? Просто пиши.", reply_markup=get_main_keyboard())
     elif text == "Куда пойти":
-        await update.message.reply_text(
-            "Мест много: парк, мост, база, крыша. Куда хочешь?",
-            reply_markup=get_main_keyboard()
-        )
-
+        await update.message.reply_text("Мест много: парк, мост, база, крыша. Куда хочешь?", reply_markup=get_main_keyboard())
     elif text in LOCATIONS:
         fish, weight = random.choice(FISHES)
-        await update.message.reply_text(
-            f"Ты пошёл на {text} и поймал {fish} весом {weight}!",
-            reply_markup=get_fish_keyboard()
-        )
-
+        await update.message.reply_text(f"Ты пошёл на {text} и поймал {fish} весом {weight}!", reply_markup=get_fish_keyboard())
     elif text == "Назад":
         await start(update, context)
-
     else:
-        # --- БОЛТАЛКА: отвечает на любые слова ---
-        response = random.choice(TALK_RESPONSES)
-        await update.message.reply_text(response, reply_markup=get_main_keyboard())
+        # --- ЗДЕСЬ ОТВЕЧАЕТ ИИ ---
+        ai_response = ask_ai(user_id, text)
+        await update.message.reply_text(ai_response, reply_markup=get_main_keyboard())
 
 # --- ЗАПУСК ---
 if __name__ == '__main__':
