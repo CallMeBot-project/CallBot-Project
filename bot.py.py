@@ -2,14 +2,11 @@ import random
 import os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.request import HTTPXRequest
 
-# Вставь сюда свой токен от BotFather
-BOT_TOKEN = "8720154823:AAGgoLl13YBEPVAKACb3o3rjsOhdr0t9Ve4"
-
-# Адрес прокси. Это HTTP-прокси, который я нашел в открытых списках.
-# Если не сработает, попробуем другой.
-PROXY_URL = "http://1.12.220.206:2080"
+# Токен будет браться из переменной окружения на Render.
+# На компе он будет None, поэтому для теста можно вставить свой токен прямо сюда,
+# но на Render обязательно добавь переменную BOT_TOKEN.
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8720154823:AAGgoLl13YBEPVAKACb3o3rjsOhdr0t9Ve4")
 
 LOCATIONS = ["Пискаревка", "Академический пруд", "Нева у моста", "Мусорка за домом"]
 
@@ -59,10 +56,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Интересно, расскажи ещё.")
 
 if __name__ == '__main__':
-    # Если используешь SOCKS5, нужно установить библиотеку: pip install "python-telegram-bot[socks]"
-    # Для HTTP-прокси вроде этого, вроде, ничего дополнительного не нужно.
-    request = HTTPXRequest(proxy=PROXY_URL)
-    app = ApplicationBuilder().token(BOT_TOKEN).request(request).get_updates_request(request).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.run_polling()
+    
