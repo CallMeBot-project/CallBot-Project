@@ -5,8 +5,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 from huggingface_hub import InferenceClient
 
 # --- ТОКЕНЫ ---
-BOT_TOKEN = os.environ.get("8720154823:AAGgoLl13YBEPVAKACb3o3rjsOhdr0t9Ve4")
-HF_API_KEY = os.environ.get("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")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+HF_API_KEY = os.environ.get("HF_API_KEY")
 
 # --- НАСТРОЙКА HUGGING FACE ---
 client = InferenceClient(
