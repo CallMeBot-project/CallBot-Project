@@ -62,7 +62,7 @@ def ask_ai(user_id, text):
     try:
         # Запрос к нейросети
         completion = client.chat.completions.create(
-            model="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+            model="openai/gpt-oss-120b",
             messages=user_conversations[user_id],
             max_tokens=500,
             temperature=0.7,
