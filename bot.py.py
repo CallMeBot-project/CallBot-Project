@@ -4,7 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Токен берётся из переменной окружения на Render
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "СЮДА_ВСТАВЬ_ТОКЕН_ДЛЯ_ТЕСТА")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8720154823:AAGgoLl13YBEPVAKACb3o3rjsOhdr0t9Ve4")
 
 # --- ЛОКАЦИИ ДЛЯ РЫБАЛКИ ---
 LOCATIONS = [
