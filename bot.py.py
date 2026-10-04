@@ -3,9 +3,11 @@ import os
 import asyncio
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from aiohttp import web
 
-# Токен берётся из переменной окружения на Render
+# --- ТОКЕН И ПОРТ ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+PORT = int(os.environ.get("PORT", 10000))
 
 # --- ЛОКАЦИИ ДЛЯ РЫБАЛКИ (много) ---
 LOCATIONS = [
@@ -16,7 +18,7 @@ LOCATIONS = [
     "Река у вокзала", "Озеро в парке", "Пирс у реки", "Затон у порта"
 ]
 
-# --- РЫБА (много, с весом) ---
+# --- РЫБА (очень много, с весом) ---
 FISHES = [
     ("Окунь", "300 г"), ("Карась", "500 г"), ("Щука", "1.5 кг"),
     ("Лещ", "800 г"), ("Плотва", "200 г"), ("Сом", "3 кг"),
@@ -25,10 +27,14 @@ FISHES = [
     ("Налим", "2 кг"), ("Жерех", "1.8 кг"), ("Форель", "1.1 кг"),
     ("Осетр", "5 кг"), ("Угорь", "1.5 кг"), ("Пескарь", "100 г"),
     ("Красноперка", "400 г"), ("Белоглазка", "350 г"), ("Толстолобик", "4 кг"),
-    ("Белый амур", "3.5 кг"), ("Змееголов", "2.2 кг"), ("Ротан", "250 г")
+    ("Белый амур", "3.5 кг"), ("Змееголов", "2.2 кг"), ("Ротан", "250 г"),
+    ("Бычок", "120 г"), ("Колюшка", "50 г"), ("Вьюн", "80 г"),
+    ("Горчак", "40 г"), ("Подуст", "550 г"), ("Рыбец", "450 г"),
+    ("Шемая", "300 г"), ("Уклейка", "70 г"), ("Верховка", "30 г"),
+    ("Быстрянка", "60 г"), ("Минога", "90 г"), ("Стерлядь", "2.8 кг")
 ]
 
-# --- БОЛТАЛКА (куча фраз, чтобы казалось, что думает) ---
+# --- БОЛТАЛКА (куча фраз) ---
 TALK_RESPONSES = [
     "Интересно, расскажи ещё.", "А что было дальше?", "Жёстко, брат.",
     "Ну ты даёшь.", "Слушай, а что потом?", "Понял тебя.", "Это сильно.",
@@ -87,57 +93,50 @@ def get_fish_keyboard():
 
 # --- ФУНКЦИЯ "ДУМАНИЯ" ---
 async def think_and_reply(update, text):
-    # Задержка, чтобы казалось, что бот "думает"
     await asyncio.sleep(random.uniform(0.5, 1.5))
     await update.message.reply_text(text, reply_markup=get_main_keyboard())
 
 # --- СТАРТ ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Йо, Чувак! Выбирай:",
-        reply_markup=get_main_keyboard()
-    )
+    await update.message.reply_text("Йо, Чувак! Выбирай:", reply_markup=get_main_keyboard())
 
 # --- ОБРАБОТКА СООБЩЕНИЙ ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "Рыбалка":
-        await update.message.reply_text(
-            "Куда пойдём?",
-            reply_markup=get_location_keyboard()
-        )
-
+        await update.message.reply_text("Куда пойдём?", reply_markup=get_location_keyboard())
     elif text == "Болталка":
-        await update.message.reply_text(
-            "О чём хочешь поговорить? Просто пиши.",
-            reply_markup=get_main_keyboard()
-        )
-
+        await update.message.reply_text("О чём хочешь поговорить? Просто пиши.", reply_markup=get_main_keyboard())
     elif text == "Куда пойти":
-        await update.message.reply_text(
-            "Мест много: парк, мост, база, крыша. Куда хочешь?",
-            reply_markup=get_main_keyboard()
-        )
-
+        await update.message.reply_text("Мест много: парк, мост, база, крыша. Куда хочешь?", reply_markup=get_main_keyboard())
     elif text in LOCATIONS:
         fish, weight = random.choice(FISHES)
-        await update.message.reply_text(
-            f"Ты пошёл на {text} и поймал {fish} весом {weight}!",
-            reply_markup=get_fish_keyboard()
-        )
-
+        await update.message.reply_text(f"Ты пошёл на {text} и поймал {fish} весом {weight}!", reply_markup=get_fish_keyboard())
     elif text == "Назад":
         await start(update, context)
-
     else:
-        # --- БОЛТАЛКА: отвечает случайной фразой с задержкой ---
         response = random.choice(TALK_RESPONSES)
         await think_and_reply(update, response)
 
-# --- ЗАПУСК ---
+# --- ВЕБ-СЕРВЕР ДЛЯ ПОРТА ---
+async def handle(request):
+    return web.Response(text="Bot is running")
+
+async def main():
+    # Запускаем веб-сервер
+    app_web = web.Application()
+    app_web.router.add_get('/', handle)
+    runner = web.AppRunner(app_web)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+
+    # Запускаем бота
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    await application.run_polling()
+
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling()
+    asyncio.run(main())
