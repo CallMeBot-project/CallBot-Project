@@ -1,6 +1,7 @@
 import random
 import os
 import asyncio
+import threading
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from aiohttp import web
@@ -119,24 +120,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = random.choice(TALK_RESPONSES)
         await think_and_reply(update, response)
 
-# --- ВЕБ-СЕРВЕР ДЛЯ ПОРТА ---
-async def handle(request):
-    return web.Response(text="Bot is running")
+# --- ВЕБ-СЕРВЕР ДЛЯ ПОРТА (в отдельном потоке) ---
+def run_web_server():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-async def main():
-    # Запускаем веб-сервер
+    async def handle(request):
+        return web.Response(text="Bot is running")
+
     app_web = web.Application()
     app_web.router.add_get('/', handle)
     runner = web.AppRunner(app_web)
-    await runner.setup()
+    loop.run_until_complete(runner.setup())
     site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
+    loop.run_until_complete(site.start())
+    loop.run_forever()
 
-    # Запускаем бота
+# --- ЗАПУСК ---
+if __name__ == '__main__':
+    # Запускаем веб-сервер в отдельном потоке
+    threading.Thread(target=run_web_server, daemon=True).start()
+
+    # Запускаем бота в основном потоке
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    await application.run_polling()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+    application.run_polling()
