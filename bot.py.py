@@ -10,7 +10,7 @@ from aiohttp import web
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
-# --- ЛОКАЦИИ ДЛЯ РЫБАЛКИ (много) ---
+# --- ЛОКАЦИИ ДЛЯ РЫБАЛКИ ---
 LOCATIONS = [
     "Пискаревка", "Академический пруд", "Нева у моста", "Мусорка за домом",
     "База под мостом", "Крыша у Артёма", "Фонтан в парке", "Заброшенный пирс",
@@ -19,7 +19,7 @@ LOCATIONS = [
     "Река у вокзала", "Озеро в парке", "Пирс у реки", "Затон у порта"
 ]
 
-# --- РЫБА (очень много, с весом) ---
+# --- РЫБА ---
 FISHES = [
     ("Окунь", "300 г"), ("Карась", "500 г"), ("Щука", "1.5 кг"),
     ("Лещ", "800 г"), ("Плотва", "200 г"), ("Сом", "3 кг"),
@@ -35,7 +35,7 @@ FISHES = [
     ("Быстрянка", "60 г"), ("Минога", "90 г"), ("Стерлядь", "2.8 кг")
 ]
 
-# --- БОЛТАЛКА (куча фраз) ---
+# --- БОЛТАЛКА ---
 TALK_RESPONSES = [
     "Интересно, расскажи ещё.", "А что было дальше?", "Жёстко, брат.",
     "Ну ты даёшь.", "Слушай, а что потом?", "Понял тебя.", "Это сильно.",
@@ -103,7 +103,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- ОБРАБОТКА СООБЩЕНИЙ ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    is_group = update.message.chat.type in ['group', 'supergroup']
+    if is_group:
+        bot_username = context.bot.username
+        if f"@{bot_username}" not in update.message.text:
+            return
+    text = update.message.text.replace(f"@{context.bot.username}", "").strip()
 
     if text == "Рыбалка":
         await update.message.reply_text("Куда пойдём?", reply_markup=get_location_keyboard())
@@ -120,7 +125,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = random.choice(TALK_RESPONSES)
         await think_and_reply(update, response)
 
-# --- ВЕБ-СЕРВЕР ДЛЯ ПОРТА (в отдельном потоке) ---
+# --- ВЕБ-СЕРВЕР ДЛЯ ПОРТА ---
 def run_web_server():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -138,10 +143,7 @@ def run_web_server():
 
 # --- ЗАПУСК ---
 if __name__ == '__main__':
-    # Запускаем веб-сервер в отдельном потоке
     threading.Thread(target=run_web_server, daemon=True).start()
-
-    # Запускаем бота в основном потоке
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
